@@ -1,0 +1,487 @@
+########################################################
+### Author:   Eugene Marikhin
+### Date:     25-09-2018
+### Version:  1.0.3
+########################################################
+
+library(dplyr)
+library(tm)
+library(SnowballC)
+library(ggplot2)
+library(RColorBrewer)
+library(ggthemes)
+library(splus2R)
+library(reshape2)
+library(zoo)
+
+ecars <- read.csv("D:/Data Science/Motor Vehicle Register/Motor_Vehicle_Register.csv")
+nz.population <- read.csv("D:/Data Science/New Zealand Population/New_Zealand_population.csv", stringsAsFactors = F, header = T)
+
+ecars_motive_power <- select(ecars, MOTIVE_POWER)
+n_distinct(ecars_motive_power)
+distinct(ecars_motive_power)
+
+ecars_electric <- filter(ecars, MOTIVE_POWER == "ELECTRIC")
+ecars_vehicle_auc <- filter(ecars_electric, TLA == "AUCKLAND")
+
+ecars.tla <- ecars_electric %>% 
+              group_by(TLA) %>% 
+                summarise(n=n()) %>% 
+                  arrange(desc(n))
+
+cars.tla <- ecars %>% 
+  group_by(TLA) %>% 
+  summarise(n=n()) %>% 
+  arrange(desc(n))
+
+ecars.tla.not.moped <- ecars_electric %>% 
+  filter(VEHICLE_TYPE != "MOPED") %>% 
+  group_by(TLA) %>% 
+  summarise(n=n()) %>% 
+  arrange(desc(n))
+
+cars.reg.year <- ecars %>% 
+  group_by(FIRST_NZ_REGISTRATION_YEAR) %>% 
+  summarise(n=n()) %>% 
+  arrange(desc(n))
+
+cities.nz <- c("AUCKLAND", "WELLINGTON CITY", "DUNEDIN CITY", "CHRISTCHURCH CITY")
+year.nz <- c(2015,2016,2017,2018)
+ 
+cars.reg.year.tla.2 <- ecars %>% 
+  filter(TLA %in% cities.nz) %>% 
+  filter(FIRST_NZ_REGISTRATION_YEAR %in% year.nz) %>% 
+  group_by(FIRST_NZ_REGISTRATION_YEAR, TLA) %>% 
+  summarise(n=n()) %>% 
+  arrange(desc(n))
+
+ecars.reg.year.tla.2 <- ecars_electric %>% 
+  filter(TLA %in% cities.nz) %>% 
+  filter(FIRST_NZ_REGISTRATION_YEAR %in% year.nz) %>% 
+  group_by(FIRST_NZ_REGISTRATION_YEAR, TLA) %>% 
+  summarise(n=n()) %>% 
+  arrange(desc(n))
+
+######## Text transformation Part #########
+
+# corpus = VCorpus(VectorSource(nz.population$Name))
+# corpus = tm_map(corpus, content_transformer(tolower))
+# 
+# corpus2 = VCorpus(VectorSource(ecars.tla$TLA))
+# corpus2 = tm_map(corpus2, content_transformer(tolower))
+
+###########################################
+nz.population$Name <- upperCase(nz.population$Name)
+ecars.tla <- tbl_df(ecars.tla) 
+nz.population <- tbl_df(nz.population)
+colnames(nz.population) <- c("TLA", "Seat", "Population", "Region", "Island")
+ecars.tla$TLA <- as.character(ecars.tla$TLA)
+
+cars.tla$TLA <- as.character(cars.tla$TLA)
+
+ecars.tla.2 <- inner_join(nz.population, ecars.tla, by = c("TLA"))
+cars.tla.2 <- inner_join(nz.population, cars.tla, by = c("TLA"))
+# cars.reg.year.2 <- inner_join(nz.population, cars.reg.year, by = c("TLA"))
+
+ecars.tla.3 <- mutate(ecars.tla.2, percentage = n * 100 / Population) %>% 
+  arrange(desc(percentage))
+cars.tla.3 <- mutate(cars.tla.2, percentage = n * 100 / Population) %>% 
+  arrange(desc(percentage))
+
+ecars.year <- ecars_electric %>% 
+  group_by(FIRST_NZ_REGISTRATION_YEAR) %>% 
+  summarise(n=n()) %>% 
+  filter(FIRST_NZ_REGISTRATION_YEAR >= as.integer(2005)) %>% 
+  arrange(desc(n))
+
+ecars.year.perc <- ecars %>% 
+  group_by(FIRST_NZ_REGISTRATION_YEAR, MOTIVE_POWER == "ELECTRIC") %>% 
+  summarise(n=n()) %>% 
+  filter(FIRST_NZ_REGISTRATION_YEAR >= as.integer(2005))
+colnames(ecars.year.perc) <- c("Year", "mpower", "n")
+
+ecars.year.perc.tidy <- dcast(ecars.year.perc, Year ~ mpower, value.var = "n")
+colnames(ecars.year.perc.tidy) <- c("Year", "nonelectric", "electric")
+
+######### electric to non-electric ratio ##########
+ecars.year.perc.tidy.2 <- mutate(ecars.year.perc.tidy, summ = round ((electric * 100 / (nonelectric + electric)),3))
+ecars.year.perc.tidy.3 <- mutate(ecars.year.perc.tidy, summ = round ((electric * 100 / (nonelectric + electric)),3)) %>% 
+  arrange(desc(Year))
+ggplot(ecars.year.perc.tidy.3, aes(x = Year, y = summ, colour="black", fill='blue')) +
+  geom_bar(colour="#00C1B3", fill="#A2B720", stat = "identity") +
+  scale_fill_brewer(palette = "Spectral") +
+  xlab("Year") + 
+  ylab("") +
+  ggtitle("Electric vehicles with respect to petrol cars
+sold in New Zealand since the year 2005") +
+  theme(legend.position="none",
+        plot.title = element_text(hjust = 0.5),
+        text = element_text(size=14, colour = "#46A8D2"),
+        panel.background = element_blank(),
+        # plot.title = element_text(size=16),
+        # axis.text.x = element_text(colour="grey20",size=20,hjust=.5,vjust=.5,face="plain"),
+        axis.title.x = element_text(colour="#1F2374",size=12,angle=0,hjust=.5,vjust=0,face="plain"),
+        axis.title.y = element_text(colour="grey20",size=12,angle=90,hjust=.5,vjust=0,face="plain"),
+        plot.margin = margin(12, 12, 12, 12, "pt"))
+
+colnames(ecars.year.perc.tidy.2) <- c("Year", "Non-electric vehicles", "Electric vehicles", "Electric to Non-electric ratio")
+write.csv(x = ecars.year.perc.tidy.3, file = "electric to non-electtic ratio3.csv", row.names = F)
+ 
+plot(ecars.year$n~ecars.year$FIRST_NZ_REGISTRATION_YEAR,t='p')
+
+#### Auckland part #####
+
+ecars.auckland <- ecars_electric %>% 
+                    filter(TLA == "AUCKLAND") %>% 
+                      group_by(FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH) %>% 
+                        summarise(n=n())
+
+ecars.auckland.2016 <- ecars_electric %>% 
+  filter(TLA == "AUCKLAND", FIRST_NZ_REGISTRATION_YEAR %in% c(2016,2017,2018)) %>% 
+  group_by(FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH) %>% 
+  summarise(n=n())
+  
+plot(ecars.auckland.2016$n,t='l')
+
+#### Wellington part #####
+
+ecars.well <- ecars_electric %>% 
+  filter(TLA == "WELLINGTON CITY") %>% 
+  group_by(FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH) %>% 
+  summarise(n=n())
+# plot(ecars.well$n,t='l')
+
+ecars.well.2015 <- ecars_electric %>% 
+  filter(TLA == "WELLINGTON CITY", FIRST_NZ_REGISTRATION_YEAR %in% c(2015,2016,2017,2018)) %>% 
+  group_by(FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH) %>% 
+  summarise(n=n())
+# plot(ecars.well$n,t='l')
+plot(ecars.well.2015$n,t='l')
+
+cars.well <- ecars %>% 
+  filter(TLA == "WELLINGTON CITY") %>% 
+  group_by(FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH) %>% 
+  summarise(n=n())
+# plot(ecars.well$n,t='l')
+
+cars.well.2015 <- ecars %>% 
+  filter(TLA == "DUNEDIN CITY", FIRST_NZ_REGISTRATION_YEAR %in% c(2015,2016,2017,2018)) %>% 
+  group_by(FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH) %>% 
+  summarise(n=n())
+# plot(ecars.well$n,t='l')
+plot(cars.well.2015$n,t='h')
+
+ecars.2015 <- ecars_electric %>% 
+  filter(TLA %in% cities.nz, FIRST_NZ_REGISTRATION_YEAR %in% year.nz) %>% 
+  group_by(TLA, FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH) %>% 
+  summarise(n=n())
+# plot(ecars.well$n,t='l')
+plot(ecars.2015$n,t='l')
+#### Nelson part #####
+
+ecars.nelson <- ecars_electric %>% 
+  filter(TLA == "NELSON CITY") %>% 
+  group_by(FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH) %>% 
+  summarise(n=n())
+
+ecars.nelson.2016 <- ecars_electric %>% 
+  filter(TLA == "NELSON CITY", FIRST_NZ_REGISTRATION_YEAR %in% c(2016,2017,2018)) %>% 
+  group_by(FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH) %>% 
+  summarise(n=n())
+# plot(ecars.nelson$n,t='l')
+# plot(ecars.nelson.2016$n,t='l')
+
+ecars.nelson.2016 <- ecars %>% 
+  filter(TLA == "AUCKLAND", FIRST_NZ_REGISTRATION_YEAR %in% c(2015,2016,2017,2018)) %>% 
+  group_by(FIRST_NZ_REGISTRATION_YEAR) %>% 
+  summarise(n=n())
+# plot(ecars.nelson$n,t='l')
+plot(ecars.nelson.2016$n,t='h')
+
+#### Dunedin part #####
+
+ecars.dunedin <- ecars_electric %>% 
+  filter(TLA == "DUNEDIN CITY") %>% 
+  group_by(FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH) %>% 
+  summarise(n=n())
+
+ecars.dunedin.2015 <- ecars_electric %>% 
+  filter(TLA == "DUNEDIN CITY", FIRST_NZ_REGISTRATION_YEAR %in% c(2015,2016,2017,2018)) %>% 
+  group_by(FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH) %>% 
+  summarise(n=n()) %>% 
+  arrange(FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH)
+# plot(ecars.dunedin$n,t='l')
+plot(ecars.dunedin.2015$n,t='l')
+
+### End of Dunedin part ###
+
+
+ecars.tla.2015 <- ecars_electric %>% 
+  filter(FIRST_NZ_REGISTRATION_YEAR %in% c(2015,2016,2017,2018)) %>% 
+  group_by(TLA) %>% 
+  summarise(n=n()) %>% 
+  arrange(desc(n))
+
+ecars.tla.2015 <- tbl_df(ecars.tla.2015)
+ecars.reg.year.tla.3 <- tbl_df(ecars.reg.year.tla.2)
+ecars.tla.2015$TLA <- as.character(ecars.tla.2015$TLA)
+ecars.reg.year.tla.3$TLA <- as.character(ecars.reg.year.tla.3$TLA)
+
+ecars.tla.2015.2 <- inner_join(nz.population, ecars.tla.2015, by = c("TLA"))
+  
+ecars.tla.2015.3 <- mutate(ecars.tla.2015.2, percentage = round((n * 100 / Population),3)) %>% 
+    arrange(desc(percentage))
+
+ecars.tla.2015.4 <- ecars.tla.2015.3[1:10,]
+ecars.tla.2015.5 <- as.data.frame(ecars.tla.2015.4)
+
+##############
+# ecars.reg.year.tla.2 <- ecars_electric %>% 
+#   filter(TLA %in% cities.nz) %>% 
+#   filter(FIRST_NZ_REGISTRATION_YEAR %in% year.nz) %>% 
+#   group_by(FIRST_NZ_REGISTRATION_YEAR, TLA) %>% 
+#   summarise(n=n()) %>% 
+#   arrange(desc(n))
+
+ecars.tla.2015.2018 <- inner_join(nz.population, ecars.reg.year.tla.2, by = c("TLA"))
+
+ecars.tla.2015.2018.2 <- mutate(ecars.tla.2015.2018, percentage = n * 100 / Population) %>% 
+  arrange(desc(percentage))
+
+ecars.tla.2015.2018.3 <- ecars.tla.2015.2018.2[1:10,]
+ecars.tla.2015.2018.4 <- as.data.frame(ecars.tla.2015.2018.3)
+
+###########
+
+ecars.tla.2a <- ecars.tla.2 %>% 
+  group_by(Island) %>% 
+    summarise(n = sum(n), Population = sum(Population)) %>% 
+      mutate(percentage = n * 100 / Population)
+
+###########
+
+ecars.tla.2b <- ecars.tla.2 %>% 
+  group_by(Region) %>% 
+  summarise(n = sum(n), Population = sum(Population)) %>% 
+  mutate(percentage = round((n * 100 / Population),3)) %>% 
+  arrange(desc(percentage))
+ecars.tla.2d <- ecars.tla.2b
+colnames(ecars.tla.2d) <- c("Region", "Cars registred", "Population", "e-cars % posession")
+write.csv(x = ecars.tla.2d, file = "ecars-tla-2d-0.csv", row.names = F)
+###########
+
+g <- ggplot(ecars.tla.2015.2018.4, aes(TLA))
+# Number of cars in each class:
+g + geom_bar(aes(weight = percentage)) +
+  scale_color_gradientn(colours = rainbow(5))
+
+theTable <- within(ecars.tla.2015.5, 
+                   percentage <- factor(percentage, 
+                                      levels=names(sort(table(percentage), 
+                                                        decreasing=TRUE))))
+
+ecars.tla.2015.5$TLA <- factor(ecars.tla.2015.5$TLA, levels = ecars.tla.2015.5$TLA[order(ecars.tla.2015.5$percentage)])
+
+ggplot(ecars.tla.2015.5, aes(x=reorder(as.factor(TLA), -percentage), y = percentage, fill=reorder(as.factor(TLA), -percentage))) + 
+  geom_bar(stat = "identity") +
+  scale_fill_brewer(palette = "Spectral") +
+  xlab("Territorial Local Authority") +
+  ylab("") +
+  ggtitle("Ratio of electric vehicles quantity to population by TLA") +
+  theme_bw() +
+  theme(
+        plot.title = element_text(hjust = 0.5, colour = "#1F457D"),
+        axis.text.x=element_blank(),
+        # axis.text.x = element_text(colour="grey20",size=10,hjust=.5,vjust=.5,face="plain"),
+        axis.title.x = element_text(colour="#1F2374",size=12,angle=0,hjust=.5,vjust=0,face="plain"))+
+  labs(fill="TLA")
+
+write.csv(x = ecars.tla.2015.5, file = "ecars2015-0.csv", row.names = F)
+
+######### Region #############
+
+ecars.tla.2c <- ecars.tla.2b[1:10,]
+
+ggplot(ecars.tla.2c, aes(x=reorder(as.factor(Region), -percentage), y = percentage, fill=reorder(as.factor(Region), -percentage))) + 
+  geom_bar(stat = "identity") +
+  scale_fill_brewer(palette = "Spectral") +
+  xlab("Region") +
+  ylab("") +
+  ggtitle("Ratio of electric vehicles quantity to population by district") +
+  theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5, colour = "#1F457D"),
+    axis.text.x=element_blank(),
+    # axis.text.x = element_text(colour="grey20",size=10,hjust=.5,vjust=.5,face="plain"),
+    axis.title.x = element_text(colour="#1F2374",size=12,angle=0,hjust=.5,vjust=0,face="plain"))+
+  labs(fill="Region")
+write.csv(x = ecars.tla.2c, file = "2c-0.csv", row.names = F)
+# legend.position="none",
+# ecars.year$FIRST_NZ_REGISTRATION_YEAR <- factor(ecars.year$FIRST_NZ_REGISTRATION_YEAR, levels = ecars.year$FIRST_NZ_REGISTRATION_YEAR[order(ecars.tla.2015.5$percentage)])
+
+ggplot(ecars.year, aes(x = FIRST_NZ_REGISTRATION_YEAR, y = n, colour="black", fill='blue')) +
+  geom_bar(colour="#A2B720", fill="#00C1B3", stat = "identity") +
+  scale_fill_brewer(palette = "Spectral") +
+  xlab("Year") +
+  ylab("") +
+  ggtitle("Electric vehicles registered in New Zealand since 2005") +
+  theme(legend.position="none",
+        plot.title = element_text(hjust = 0.5),
+        text = element_text(size=14, colour = "#46A8D2"),
+        panel.background = element_blank(),
+        # plot.title = element_text(size=16),
+        # axis.text.x = element_text(colour="grey20",size=20,hjust=.5,vjust=.5,face="plain"),
+        axis.title.x = element_text(colour="#1F2374",size=12,angle=0,hjust=.5,vjust=0,face="plain"),
+        axis.title.y = element_text(colour="grey20",size=12,angle=90,hjust=.5,vjust=0,face="plain"),
+        plot.margin = margin(12, 12, 12, 12, "pt"))
+  #theme_bw()
+ecars.year.rearr <- ecars.year %>% 
+  arrange(desc(FIRST_NZ_REGISTRATION_YEAR))
+write.csv(x = ecars.year.rearr, file = "ecars registered by year-0.csv", row.names = F)
+
+ggplot(ecars.year.perc.tidy.3, aes(x = Year, y = summ, colour="black", fill='blue')) +
+  geom_bar(colour="#00C1B3", fill="#A2B720", stat = "identity") +
+  scale_fill_brewer(palette = "Spectral") +
+  xlab("Year") + 
+  ylab("") +
+  ggtitle("Ratio of electric to petrol vehicles
+registered in New Zealand since 2005") +
+  theme(legend.position="none",
+        plot.title = element_text(hjust = 0.5),
+        text = element_text(size=14, colour = "#46A8D2"),
+        panel.background = element_blank(),
+        # plot.title = element_text(size=16),
+        # axis.text.x = element_text(colour="grey20",size=20,hjust=.5,vjust=.5,face="plain"),
+        axis.title.x = element_text(colour="#1F2374",size=12,angle=0,hjust=.5,vjust=0,face="plain"),
+        axis.title.y = element_text(colour="grey20",size=12,angle=90,hjust=.5,vjust=0,face="plain"),
+        plot.margin = margin(12, 12, 12, 12, "pt"))
+### Wellington sales ###
+
+ecars.well.2015$new_col2 <- paste("",as.character(ecars.well.2015$FIRST_NZ_REGISTRATION_YEAR),"'",as.character(ecars.well.2015$FIRST_NZ_REGISTRATION_MONTH),"")
+ecars.2015$new_col2 <- paste("",as.character(ecars.2015$FIRST_NZ_REGISTRATION_YEAR),"'",as.character(ecars.2015$FIRST_NZ_REGISTRATION_MONTH),"")
+
+ecars.dunedin.2015$new_col2 <- paste("",as.character(ecars.dunedin.2015$FIRST_NZ_REGISTRATION_YEAR),"-",as.character(ecars.dunedin.2015$FIRST_NZ_REGISTRATION_MONTH),"",sep = "")
+ecars.2015$new_col2 <- paste("",as.character(ecars.2015$FIRST_NZ_REGISTRATION_YEAR),"'",as.character(ecars.2015$FIRST_NZ_REGISTRATION_MONTH),"")
+
+ecars.dunedin.2015$date123 <- as.Date(as.yearmon(ecars.dunedin.2015$new_col2))
+
+# month <- "2000-03"
+# as.Date(as.yearmon(month))
+# "2000-03-01"
+
+# FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH
+ggplot(ecars.dunedin.2015) +
+  geom_line(aes(factor(date123), n, group = 1), colour = "#277554") +
+  xlab("Year-Month") +
+  ylab("") +
+  ggtitle("Electric vehicles sold in Dunedin since 2015 by month") +
+  theme_bw() +
+  theme(legend.position="none",
+        plot.title = element_text(hjust = 0.5),
+        axis.title.x = element_text(colour="#1F2374",size=12,angle=0,hjust=.5,vjust=0,face="plain"),
+        axis.title.y = element_text(colour="#1F2374",size=12,angle=90,hjust=.5,vjust=0,face="plain"),
+        axis.text.x = element_text(colour="grey20",size=10,angle=90,hjust=.5,vjust=.5,face="plain"))
+  # theme(axis.text.x = element_text(angle = 90, hjust = 1)
+
+############ Christchurch Part #####################
+ecars.chr.2015 <- ecars_electric %>% 
+  filter(TLA == "CHRISTCHURCH CITY", FIRST_NZ_REGISTRATION_YEAR %in% c(2015,2016,2017,2018)) %>% 
+  group_by(FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH) %>% 
+  summarise(n=n()) %>% 
+  arrange(FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH)
+
+ecars.chr.2015$new_col2 <- paste("",as.character(ecars.chr.2015$FIRST_NZ_REGISTRATION_YEAR),"-",as.character(ecars.chr.2015$FIRST_NZ_REGISTRATION_MONTH),"",sep = "")
+ecars.chr.2015$date123 <- as.Date(as.yearmon(ecars.chr.2015$new_col2))
+
+ggplot(ecars.chr.2015) +
+  geom_line(aes(factor(date123), n, group = 1), colour = "#277554") +
+  xlab("Year-Month") +
+  ylab("") +
+  ggtitle("Electric vehicles sold in Christchurch since 2015 by month") +
+  theme_bw() +
+  theme(legend.position="none",
+        plot.title = element_text(hjust = 0.5),
+        axis.title.x = element_text(colour="#1F2374",size=12,angle=0,hjust=.5,vjust=0,face="plain"),
+        axis.title.y = element_text(colour="#1F2374",size=12,angle=90,hjust=.5,vjust=0,face="plain"),
+        axis.text.x = element_text(colour="grey20",size=10,angle=90,hjust=.5,vjust=.5,face="plain"))
+
+#####################################################################
+
+############ Wellington Part #####################
+ecars.well.2015 <- ecars_electric %>% 
+  filter(TLA == "WELLINGTON CITY", FIRST_NZ_REGISTRATION_YEAR %in% c(2015,2016,2017,2018)) %>% 
+  group_by(FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH) %>% 
+  summarise(n=n()) %>% 
+  arrange(FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH)
+
+ecars.well.2015$new_col2 <- paste("",as.character(ecars.well.2015$FIRST_NZ_REGISTRATION_YEAR),"-",as.character(ecars.well.2015$FIRST_NZ_REGISTRATION_MONTH),"",sep = "")
+ecars.well.2015$date123 <- as.Date(as.yearmon(ecars.well.2015$new_col2))
+
+ggplot(ecars.well.2015) +
+  geom_line(aes(factor(date123), n, group = 1), colour = "#277554") +
+  xlab("Year-Month") +
+  ylab("") +
+  ggtitle("Electric vehicles sold in Wellington since 2015 by month") +
+  theme_bw() +
+  theme(legend.position="none",
+        plot.title = element_text(hjust = 0.5),
+        axis.title.x = element_text(colour="#1F2374",size=12,angle=0,hjust=.5,vjust=0,face="plain"),
+        axis.title.y = element_text(colour="#1F2374",size=12,angle=90,hjust=.5,vjust=0,face="plain"),
+        axis.text.x = element_text(colour="grey20",size=10,angle=90,hjust=.5,vjust=.5,face="plain"))
+#####################################################################
+
+############ Auckland Part #####################
+ecars.auck.2015 <- ecars_electric %>% 
+  filter(TLA == "AUCKLAND", FIRST_NZ_REGISTRATION_YEAR %in% c(2015,2016,2017,2018)) %>% 
+  group_by(FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH) %>% 
+  summarise(n=n()) %>% 
+  arrange(FIRST_NZ_REGISTRATION_YEAR, FIRST_NZ_REGISTRATION_MONTH)
+
+ecars.auck.2015$new_col2 <- paste("",as.character(ecars.auck.2015$FIRST_NZ_REGISTRATION_YEAR),"-",as.character(ecars.auck.2015$FIRST_NZ_REGISTRATION_MONTH),"",sep = "")
+ecars.auck.2015$date123 <- as.Date(as.yearmon(ecars.auck.2015$new_col2))
+
+ggplot(ecars.auck.2015) +
+  geom_line(aes(factor(date123), n, group = 1), colour = "#277554") +
+  xlab("Year-Month") +
+  ylab("") +
+  ggtitle("Electric vehicles sold in Auckland since 2015 by month") +
+  theme_bw() +
+  theme(legend.position="none",
+        plot.title = element_text(hjust = 0.5),
+        axis.title.x = element_text(colour="#1F2374",size=12,angle=0,hjust=.5,vjust=0,face="plain"),
+        axis.title.y = element_text(colour="#1F2374",size=12,angle=90,hjust=.5,vjust=0,face="plain"),
+        axis.text.x = element_text(colour="grey20",size=10,angle=90,hjust=.5,vjust=.5,face="plain"))
+  #####################################################################
+qplot(new_col2, n, data = ecars.well.2015, geom = "point", group = 1) +
+    xlab("Year + Month") +
+    ylab("Electric cars sold") +
+    ggtitle("Electric cars sold from 2000") +
+    theme(legend.position="none",
+        plot.title = element_text(hjust = 0.5),
+        axis.title.x = element_text(colour="#1F2374",size=14,angle=90,hjust=.5,vjust=0,face="plain"),
+        axis.title.y = element_text(colour="#1F2374",size=18,angle=90,hjust=.5,vjust=0,face="plain"),
+        axis.text.x = element_text(colour="grey20",size=20,angle=0,hjust=.5,vjust=.5,face="plain"))+
+  theme_bw()
+
+nz.population %>% 
+  summarise(sum = sum(Population))
+
+
+ggplot(ecars.reg.year.tla.2, aes(x = FIRST_NZ_REGISTRATION_YEAR, y = n, colour="black", fill='blue')) +
+  geom_bar(colour="black", aes(fill=TLA), stat = "identity", position=position_dodge()) +
+  scale_fill_brewer(palette = "Spectral") +
+  xlab("Year") +
+  ylab("Electric cars sold") +
+  ggtitle("Cars sold from 2015")
+
+ggplot(ecars.tla.2015.2018.2, aes(x = FIRST_NZ_REGISTRATION_YEAR, y = percentage, colour="black", fill='blue')) +
+  geom_bar(colour="black", aes(fill=TLA), stat = "identity", position=position_dodge()) +
+  scale_fill_brewer(palette = "Spectral") +
+  xlab("Year") +
+  ylab("") +
+  ggtitle("The ratio of the number of electric cars to population 
+    in the most rapidly growth TLAs in terms of electric cars increase")+
+  labs(fill = "TLA") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
